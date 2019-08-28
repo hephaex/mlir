@@ -13,8 +13,8 @@ main TensorFlow repository soon.
 
 # How to Contribute
 
-We'd love to accept your patches and contributions to this project soon. But we
-are not yet ready to accept community contributions at this time.
+Thank you for your interest in contributing to MLIR! If you want to contribute
+to MLIR, be sure to review the [contribution guidelines](CONTRIBUTING.md).
 
 ## More resources
 
@@ -67,7 +67,7 @@ project that compiles down to MLIR.
 
 ## Compiler infrastructure
 
-We benefitted from experience gained from building other IRs (HLO, LLVM and SIL)
+We benefited from experience gained from building other IRs (HLO, LLVM and SIL)
 when building MLIR. We will directly adopt existing best practices, e.g. writing
 and maintaining an IR spec, building an IR verifier, providing the ability to
 dump and parse MLIR files to text, writing extensive unit tests with the
@@ -84,21 +84,34 @@ and by making references explicit with `function_ref`.
 
 # Getting started with MLIR
 
-The following instructions assume that you have `git`,
-[`ninja`](https://ninja-build.org/), and a working C++ toolchain. In the future,
-we aim to align on the same level of platform support as
+The following instructions for compiling and testing MLIR assume that you have
+`git`, [`ninja`](https://ninja-build.org/), and a working C++ toolchain. In the
+future, we aim to align on the same level of platform support as
 [LLVM](https://llvm.org/docs/GettingStarted.html#requirements). For now, MLIR
-has been tested on Linux and macOS, with recent versions of clang and with gcc 7.
+has been tested on Linux and macOS, with recent versions of clang and with
+gcc 7.
 
-```
+```sh
 git clone https://github.com/llvm/llvm-project.git
-cd llvm-project/llvm/projects/
-git clone https://github.com/tensorflow/mlir
-cd ../..
-mkdir build
-cd build
-cmake -G Ninja ../llvm -DLLVM_BUILD_EXAMPLES=ON
-ninja check-mlir
+git clone https://github.com/tensorflow/mlir llvm-project/llvm/projects/mlir
+mkdir llvm-project/build
+cd llvm-project/build
+cmake -G Ninja ../llvm -DLLVM_BUILD_EXAMPLES=ON -DLLVM_TARGETS_TO_BUILD="host"
+cmake --build . --target check-mlir
+```
+
+To compile and test on Windows using Visual Studio 2017:
+
+```bat
+REM In shell with Visual Studio environment set up, e.g., with command such as
+REM   $visual-studio-install\Auxiliary\Build\vcvarsall.bat" x64
+REM invoked.
+git clone https://github.com/llvm/llvm-project.git
+git clone https://github.com/tensorflow/mlir llvm-project\llvm\projects\mlir
+mkdir llvm-project\build
+cd llvm-project\build
+cmake ..\llvm -G "Visual Studio 15 2017 Win64" -DLLVM_BUILD_EXAMPLES=ON -DLLVM_TARGETS_TO_BUILD="host" -DCMAKE_BUILD_TYPE=Release -Thost=x64
+cmake --build . --target check-mlir
 ```
 
 As a starter, you may try [the tutorial](g3doc/Tutorials/Toy/Ch-1.md) on
@@ -106,8 +119,14 @@ building a compiler for a Toy language.
 
 # MLIR talks
 
-* "[MLIR Primer: A Compiler Infrastructure for the End of Moore’s
-    Law](https://drive.google.com/file/d/1hUeAJXcAXwz82RXA5VtO5ZoH8cVQhrOK/view?usp=sharing)"
+* "[MLIR Primer: A Compiler Infrastructure for the End of Moore’s Law](https://ai.google/research/pubs/pub48035.pdf)"
   * Chris Lattner & Jacques Pienaar, Google at
     [Compilers for Machine Learning](https://www.c4ml.org/) workshop at
     [CGO 2019](http://cgo.org/cgo2019/)
+* "[MLIR: Multi-Level Intermediate Representation for Compiler
+    Infrastructure](https://llvm.org/devmtg/2019-04/talks.html#Keynote_1)"
+  * Tatiana Shpeisman & Chris Lattner, Google at
+    [EuroLLVM 2019](https://llvm.org/devmtg/2019-04)
+* "[Tutorial: Building a Compiler with MLIR](https://llvm.org/devmtg/2019-04/talks.html#Tutorial_1)"
+  * Mehdi Amini, Jacques Pienaar, Nicolas Vasilache, Google at
+    [EuroLLVM 2019](https://llvm.org/devmtg/2019-04)

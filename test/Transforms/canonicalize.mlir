@@ -8,6 +8,22 @@ func @test_subi_zero(%arg0: i32) -> i32 {
   return %y: i32
 }
 
+// CHECK-LABEL: func @test_subi_zero_vector
+func @test_subi_zero_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  //CHECK-NEXT: %cst = constant dense<0> : vector<4xi32>
+  %y = subi %arg0, %arg0 : vector<4xi32>
+  // CHECK-NEXT: return %cst
+  return %y: vector<4xi32>
+}
+
+// CHECK-LABEL: func @test_subi_zero_tensor
+func @test_subi_zero_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  //CHECK-NEXT: %cst = constant dense<0> : tensor<4x5xi32>
+  %y = subi %arg0, %arg0 : tensor<4x5xi32>
+  // CHECK-NEXT: return %cst
+  return %y: tensor<4x5xi32>
+}
+
 // CHECK-LABEL: func @dim
 func @dim(%arg0: tensor<8x4xf32>) -> index {
 
@@ -51,7 +67,7 @@ func @addi_zero(%arg0: i32) -> i32 {
 // CHECK-LABEL: func @addi_zero_vector
 func @addi_zero_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
   // CHECK-NEXT: return %arg0
-  %c0_v4i32 = constant splat<vector<4 x i32>, 0> : vector<4 x i32>
+  %c0_v4i32 = constant dense<0> : vector<4 x i32>
   %y = addi %c0_v4i32, %arg0 : vector<4 x i32>
   return %y: vector<4 x i32>
 }
@@ -59,7 +75,7 @@ func @addi_zero_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
 // CHECK-LABEL: func @addi_zero_tensor
 func @addi_zero_tensor(%arg0: tensor<4 x 5 x i32>) -> tensor<4 x 5 x i32> {
   // CHECK-NEXT: return %arg0
-  %c0_t45i32 = constant splat<tensor<4 x 5 x i32>, 0> : tensor<4 x 5 x i32>
+  %c0_t45i32 = constant dense<0> : tensor<4 x 5 x i32>
   %y = addi %arg0, %c0_t45i32 : tensor<4 x 5 x i32>
   return %y: tensor<4 x 5 x i32>
 }
@@ -77,8 +93,8 @@ func @muli_zero(%arg0: i32) -> i32 {
 
 // CHECK-LABEL: func @muli_zero_vector
 func @muli_zero_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
-  // CHECK-NEXT: %cst = constant splat<vector<4xi32>, 0> : vector<4xi32>
-  %cst = constant splat<vector<4 x i32>, 0> : vector<4 x i32>
+  // CHECK-NEXT: %cst = constant dense<0> : vector<4xi32>
+  %cst = constant dense<0> : vector<4 x i32>
 
   %y = muli %cst, %arg0 : vector<4 x i32>
 
@@ -88,8 +104,8 @@ func @muli_zero_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
 
 // CHECK-LABEL: func @muli_zero_tensor
 func @muli_zero_tensor(%arg0: tensor<4 x 5 x i32>) -> tensor<4 x 5 x i32> {
-  // CHECK-NEXT: %cst = constant splat<tensor<4x5xi32>, 0> : tensor<4x5xi32>
-  %cst = constant splat<tensor<4 x 5 x i32>, 0> : tensor<4 x 5 x i32>
+  // CHECK-NEXT: %cst = constant dense<0> : tensor<4x5xi32>
+  %cst = constant dense<0> : tensor<4 x 5 x i32>
 
   %y = muli %arg0, %cst : tensor<4 x 5 x i32>
 
@@ -108,7 +124,7 @@ func @muli_one(%arg0: i32) -> i32 {
 // CHECK-LABEL: func @muli_one_vector
 func @muli_one_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
   // CHECK-NEXT: return %arg0
-  %c1_v4i32 = constant splat<vector<4 x i32>, 1> : vector<4 x i32>
+  %c1_v4i32 = constant dense<1> : vector<4 x i32>
   %y = muli %c1_v4i32, %arg0 : vector<4 x i32>
   return %y: vector<4 x i32>
 }
@@ -116,9 +132,126 @@ func @muli_one_vector(%arg0: vector<4 x i32>) -> vector<4 x i32> {
 // CHECK-LABEL: func @muli_one_tensor
 func @muli_one_tensor(%arg0: tensor<4 x 5 x i32>) -> tensor<4 x 5 x i32> {
   // CHECK-NEXT: return %arg0
-  %c1_t45i32 = constant splat<tensor<4 x 5 x i32>, 1> : tensor<4 x 5 x i32>
+  %c1_t45i32 = constant dense<1> : tensor<4 x 5 x i32>
   %y = muli %arg0, %c1_t45i32 : tensor<4 x 5 x i32>
   return %y: tensor<4 x 5 x i32>
+}
+
+//CHECK-LABEL: func @and_self
+func @and_self(%arg0: i32) -> i32 {
+  //CHECK-NEXT: return %arg0
+  %1 = and %arg0, %arg0 : i32
+  return %1 : i32
+}
+
+//CHECK-LABEL: func @and_self_vector
+func @and_self_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  //CHECK-NEXT: return %arg0
+  %1 = and %arg0, %arg0 : vector<4xi32>
+  return %1 : vector<4xi32>
+}
+
+//CHECK-LABEL: func @and_self_tensor
+func @and_self_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  //CHECK-NEXT: return %arg0
+  %1 = and %arg0, %arg0 : tensor<4x5xi32>
+  return %1 : tensor<4x5xi32>
+}
+
+//CHECK-LABEL: func @and_zero
+func @and_zero(%arg0: i32) -> i32 {
+  // CHECK-NEXT: %c0_i32 = constant 0 : i32
+  %c0_i32 = constant 0 : i32
+  // CHECK-NEXT: return %c0_i32
+  %1 = and %arg0, %c0_i32 : i32
+  return %1 : i32
+}
+
+//CHECK-LABEL: func @and_zero_vector
+func @and_zero_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  // CHECK-NEXT: %cst = constant dense<0> : vector<4xi32>
+  %cst = constant dense<0> : vector<4xi32>
+  // CHECK-NEXT: return %cst
+  %1 = and %arg0, %cst : vector<4xi32>
+  return %1 : vector<4xi32>
+}
+
+//CHECK-LABEL: func @and_zero_tensor
+func @and_zero_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  // CHECK-NEXT: %cst = constant dense<0> : tensor<4x5xi32>
+  %cst = constant dense<0> : tensor<4x5xi32>
+  // CHECK-NEXT: return %cst
+  %1 = and %arg0, %cst : tensor<4x5xi32>
+  return %1 : tensor<4x5xi32>
+}
+
+//CHECK-LABEL: func @or_self
+func @or_self(%arg0: i32) -> i32 {
+  //CHECK-NEXT: return %arg0
+  %1 = or %arg0, %arg0 : i32
+  return %1 : i32
+}
+
+//CHECK-LABEL: func @or_self_vector
+func @or_self_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  //CHECK-NEXT: return %arg0
+  %1 = or %arg0, %arg0 : vector<4xi32>
+  return %1 : vector<4xi32>
+}
+
+//CHECK-LABEL: func @or_self_tensor
+func @or_self_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  //CHECK-NEXT: return %arg0
+  %1 = or %arg0, %arg0 : tensor<4x5xi32>
+  return %1 : tensor<4x5xi32>
+}
+
+//CHECK-LABEL: func @or_zero
+func @or_zero(%arg0: i32) -> i32 {
+  %c0_i32 = constant 0 : i32
+  // CHECK-NEXT: return %arg0
+  %1 = or %arg0, %c0_i32 : i32
+  return %1 : i32
+}
+
+//CHECK-LABEL: func @or_zero_vector
+func @or_zero_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  // CHECK-NEXT: return %arg0
+  %cst = constant dense<0> : vector<4xi32>
+  %1 = or %arg0, %cst : vector<4xi32>
+  return %1 : vector<4xi32>
+}
+
+//CHECK-LABEL: func @or_zero_tensor
+func @or_zero_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  // CHECK-NEXT: return %arg0
+  %cst = constant dense<0> : tensor<4x5xi32>
+  %1 = or %arg0, %cst : tensor<4x5xi32>
+  return %1 : tensor<4x5xi32>
+}
+
+//CHECK-LABEL: func @xor_self
+func @xor_self(%arg0: i32) -> i32 {
+  //CHECK-NEXT: %c0_i32 = constant 0
+  %1 = xor %arg0, %arg0 : i32
+  //CHECK-NEXT: return %c0_i32
+  return %1 : i32
+}
+
+//CHECK-LABEL: func @xor_self_vector
+func @xor_self_vector(%arg0: vector<4xi32>) -> vector<4xi32> {
+  //CHECK-NEXT: %cst = constant dense<0> : vector<4xi32>
+  %1 = xor %arg0, %arg0 : vector<4xi32>
+  //CHECK-NEXT: return %cst
+  return %1 : vector<4xi32>
+}
+
+//CHECK-LABEL: func @xor_self_tensor
+func @xor_self_tensor(%arg0: tensor<4x5xi32>) -> tensor<4x5xi32> {
+  //CHECK-NEXT: %cst = constant dense<0> : tensor<4x5xi32>
+  %1 = xor %arg0, %arg0 : tensor<4x5xi32>
+  //CHECK-NEXT: return %cst
+  return %1 : tensor<4x5xi32>
 }
 
 // CHECK-LABEL: func @memref_cast_folding
@@ -205,18 +338,18 @@ func @dyn_shape_fold(%L : index, %M : index) -> (memref<? x ? x i32>, memref<? x
   // CHECK-NEXT: %2 = alloc() : memref<512x1024xi32>
   %c = alloc(%K, %N) : memref<? x ? x i32>
 
-  // CHECK: affine.for %i0 =
+  // CHECK: affine.for
   affine.for %i = 0 to %L {
-    // CHECK-NEXT: affine.for %i1 =
+    // CHECK-NEXT: affine.for
     affine.for %j = 0 to 10 {
-      // CHECK-NEXT: %4 = load %0[%i0, %i1] : memref<?x1024xf32>
-      // CHECK-NEXT: store %4, %1[%c0, %c0, %i0, %i1, %c0] : memref<4x1024x8x512x?xf32>
+      // CHECK-NEXT: load %0[%arg2, %arg3] : memref<?x1024xf32>
+      // CHECK-NEXT: store %{{.*}}, %1[%c0, %c0, %arg2, %arg3, %c0] : memref<4x1024x8x512x?xf32>
       %v = load %a[%i, %j] : memref<?x?xf32>
       store %v, %b[%zero, %zero, %i, %j, %zero] : memref<4x?x8x?x?xf32>
     }
   }
 
-  // CHECK: %5 = alloc() : memref<9x9xf32>
+  // CHECK: alloc() : memref<9x9xf32>
   %d = alloc(%nine, %nine) : memref<? x ? x f32>
 
   return %c, %d : memref<? x ? x i32>, memref<? x ? x f32>
@@ -234,11 +367,11 @@ func @merge_constants() -> (index, index) {
 // CHECK-LABEL: func @hoist_constant
 func @hoist_constant(%arg0: memref<8xi32>) {
   // CHECK-NEXT: %c42_i32 = constant 42 : i32
-  // CHECK-NEXT: affine.for %i0 = 0 to 8 {
-  affine.for %i0 = 0 to 8 {
-    // CHECK-NEXT: store %c42_i32, %arg0[%i0]
+  // CHECK-NEXT: affine.for %arg1 = 0 to 8 {
+  affine.for %arg1 = 0 to 8 {
+    // CHECK-NEXT: store %c42_i32, %arg0[%arg1]
     %c42_i32 = constant 42 : i32
-    store %c42_i32, %arg0[%i0] : memref<8xi32>
+    store %c42_i32, %arg0[%arg1] : memref<8xi32>
   }
   return
 }
@@ -376,4 +509,25 @@ func @lowered_affine_ceildiv() -> (index, index) {
   %14 = addi %12, %c1_2 : index
   %15 = select %8, %13, %14 : index
   return %7, %15 : index, index
+}
+
+// Checks that NOP casts are removed.
+// CHECK-LABEL: cast_values
+func @cast_values(%arg0: tensor<*xi32>, %arg1: memref<?xi32>) -> (tensor<2xi32>, memref<2xi32>) {
+
+  // NOP casts
+  %0 = tensor_cast %arg0 : tensor<*xi32> to tensor<*xi32>
+  %1 = memref_cast %arg1 : memref<?xi32> to memref<?xi32>
+
+  // CHECK-NEXT: %0 = tensor_cast %arg0 : tensor<*xi32> to tensor<2xi32>
+  // CHECK-NEXT: %1 = memref_cast %arg1 : memref<?xi32> to memref<2xi32>
+  %2 = tensor_cast %0 : tensor<*xi32> to tensor<2xi32>
+  %3 = memref_cast %1 : memref<?xi32> to memref<2xi32>
+
+  // NOP casts
+  %4 = tensor_cast %2 : tensor<2xi32> to tensor<2xi32>
+  %5 = memref_cast %3 : memref<2xi32> to memref<2xi32>
+
+  // CHECK-NEXT: return %0, %1 : tensor<2xi32>, memref<2xi32>
+  return %4, %5 : tensor<2xi32>, memref<2xi32>
 }

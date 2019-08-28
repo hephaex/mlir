@@ -72,7 +72,6 @@ public:
 private:
   // Same meaning as AffineMap's fields.
   SmallVector<AffineExpr, 8> results;
-  SmallVector<AffineExpr, 8> rangeSizes;
   unsigned numDims;
   unsigned numSymbols;
   /// A pointer to the IR's context to store all newly created
@@ -104,9 +103,6 @@ private:
 
   SmallVector<AffineExpr, 8> constraints;
   SmallVector<bool, 8> eqFlags;
-  /// A pointer to the IR's context to store all newly created
-  /// AffineExprStorage's.
-  MLIRContext *context;
 };
 
 /// An AffineValueMap is an affine map plus its ML value operands and
@@ -383,8 +379,8 @@ public:
   /// constraint system. Returns failure for the yet unimplemented/unsupported
   /// cases.  Any new identifiers that are found in the bound operands of the
   /// 'affine.for' operation are added as trailing identifiers (either
-  /// dimensional or symbolic depending on whether the operand is a valid ML
-  /// Function symbol).
+  /// dimensional or symbolic depending on whether the operand is a valid
+  /// symbol).
   //  TODO(bondhugula): add support for non-unit strides.
   LogicalResult addAffineForOpDomain(AffineForOp forOp);
 
@@ -397,12 +393,12 @@ public:
                                      bool lower = true);
 
   /// Computes the lower and upper bounds of the first 'num' dimensional
-  /// identifiers as an affine map of the remaining identifiers (dimensional and
-  /// symbolic). This method is able to detect identifiers as floordiv's
-  /// and mod's of affine expressions of other identifiers with respect to
-  /// (positive) constants. Sets bound map to a null AffineMap if such a bound
-  /// can't be found (or yet unimplemented).
-  void getSliceBounds(unsigned num, MLIRContext *context,
+  /// identifiers (starting at 'offset') as an affine map of the remaining
+  /// identifiers (dimensional and symbolic). This method is able to detect
+  /// identifiers as floordiv's and mod's of affine expressions of other
+  /// identifiers with respect to (positive) constants. Sets bound map to a
+  /// null AffineMap if such a bound can't be found (or yet unimplemented).
+  void getSliceBounds(unsigned offset, unsigned num, MLIRContext *context,
                       SmallVectorImpl<AffineMap> *lbMaps,
                       SmallVectorImpl<AffineMap> *ubMaps);
 
@@ -544,6 +540,25 @@ public:
   ///     <= 15}, output = {0 <= d0 <= 6, 1 <= d1 <= 15}.
   LogicalResult unionBoundingBox(const FlatAffineConstraints &other);
 
+  /// Returns 'true' if this constraint system and 'other' are in the same
+  /// space, i.e., if they are associated with the same set of identifiers,
+  /// appearing in the same order. Returns 'false' otherwise.
+  bool areIdsAlignedWithOther(const FlatAffineConstraints &other);
+
+  /// Merge and align the identifiers of 'this' and 'other' starting at
+  /// 'offset', so that both constraint systems get the union of the contained
+  /// identifiers that is dimension-wise and symbol-wise unique; both
+  /// constraint systems are updated so that they have the union of all
+  /// identifiers, with this's original identifiers appearing first followed by
+  /// any of other's identifiers that didn't appear in 'this'. Local
+  /// identifiers of each system are by design separate/local and are placed
+  /// one after other (this's followed by other's).
+  //  Eg: Input: 'this'  has ((%i %j) [%M %N])
+  //             'other' has (%k, %j) [%P, %N, %M])
+  //      Output: both 'this', 'other' have (%i, %j, %k) [%M, %N, %P]
+  //
+  void mergeAndAlignIdsWithOther(unsigned offset, FlatAffineConstraints *other);
+
   unsigned getNumConstraints() const {
     return getNumInequalities() + getNumEqualities();
   }
@@ -633,13 +648,14 @@ public:
   Optional<int64_t> getConstantUpperBound(unsigned pos) const;
 
   /// Gets the lower and upper bound of the pos^th identifier treating
-  /// [dimStartPos, symbStartPos) as dimensions and [symStartPos,
-  /// getNumDimAndSymbolIds) as symbols. The returned multi-dimensional maps
-  /// in the pair represent the max and min of potentially multiple affine
-  /// expressions. The upper bound is exclusive. 'localExprs' holds pre-computed
-  /// AffineExpr's for all local identifiers in the system.
+  /// [0, offset) U [offset + num, symbStartPos) as dimensions and
+  /// [symStartPos, getNumDimAndSymbolIds) as symbols. The returned
+  /// multi-dimensional maps in the pair represent the max and min of
+  /// potentially multiple affine expressions. The upper bound is exclusive.
+  /// 'localExprs' holds pre-computed AffineExpr's for all local identifiers in
+  /// the system.
   std::pair<AffineMap, AffineMap>
-  getLowerAndUpperBound(unsigned pos, unsigned dimStartPos,
+  getLowerAndUpperBound(unsigned pos, unsigned offset, unsigned num,
                         unsigned symStartPos, ArrayRef<AffineExpr> localExprs,
                         MLIRContext *context);
 

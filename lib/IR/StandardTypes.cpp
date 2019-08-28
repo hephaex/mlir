@@ -18,6 +18,7 @@
 #include "mlir/IR/StandardTypes.h"
 #include "TypeDetail.h"
 #include "mlir/IR/AffineMap.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/Support/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/Twine.h"
@@ -27,28 +28,48 @@ using namespace mlir;
 using namespace mlir::detail;
 
 //===----------------------------------------------------------------------===//
+// Type
+//===----------------------------------------------------------------------===//
+
+bool Type::isBF16() { return getKind() == StandardTypes::BF16; }
+bool Type::isF16() { return getKind() == StandardTypes::F16; }
+bool Type::isF32() { return getKind() == StandardTypes::F32; }
+bool Type::isF64() { return getKind() == StandardTypes::F64; }
+
+bool Type::isIndex() { return isa<IndexType>(); }
+
+/// Return true if this is an integer type with the specified width.
+bool Type::isInteger(unsigned width) {
+  if (auto intTy = dyn_cast<IntegerType>())
+    return intTy.getWidth() == width;
+  return false;
+}
+
+bool Type::isIntOrIndex() { return isa<IndexType>() || isa<IntegerType>(); }
+
+bool Type::isIntOrIndexOrFloat() {
+  return isa<IndexType>() || isa<IntegerType>() || isa<FloatType>();
+}
+
+bool Type::isIntOrFloat() { return isa<IntegerType>() || isa<FloatType>(); }
+
+//===----------------------------------------------------------------------===//
 // Integer Type
 //===----------------------------------------------------------------------===//
+
+// static constexpr must have a definition (until in C++17 and inline variable).
+constexpr unsigned IntegerType::kMaxWidth;
 
 /// Verify the construction of an integer type.
 LogicalResult IntegerType::verifyConstructionInvariants(
     llvm::Optional<Location> loc, MLIRContext *context, unsigned width) {
   if (width > IntegerType::kMaxWidth) {
     if (loc)
-      context->emitError(*loc, "integer bitwidth is limited to " +
-                                   Twine(IntegerType::kMaxWidth) + " bits");
+      emitError(*loc) << "integer bitwidth is limited to "
+                      << IntegerType::kMaxWidth << " bits";
     return failure();
   }
   return success();
-}
-
-IntegerType IntegerType::get(unsigned width, MLIRContext *context) {
-  return Base::get(context, StandardTypes::Integer, width);
-}
-
-IntegerType IntegerType::getChecked(unsigned width, MLIRContext *context,
-                                    Location location) {
-  return Base::getChecked(location, context, StandardTypes::Integer, width);
 }
 
 unsigned IntegerType::getWidth() const { return getImpl()->width; }
@@ -57,7 +78,7 @@ unsigned IntegerType::getWidth() const { return getImpl()->width; }
 // Float Type
 //===----------------------------------------------------------------------===//
 
-unsigned FloatType::getWidth() const {
+unsigned FloatType::getWidth() {
   switch (getKind()) {
   case StandardTypes::BF16:
   case StandardTypes::F16:
@@ -72,7 +93,7 @@ unsigned FloatType::getWidth() const {
 }
 
 /// Returns the floating semantics for the given type.
-const llvm::fltSemantics &FloatType::getFloatSemantics() const {
+const llvm::fltSemantics &FloatType::getFloatSemantics() {
   if (isBF16())
     // Treat BF16 like a double. This is unfortunate but BF16 fltSemantics is
     // not defined in LLVM.
@@ -89,7 +110,7 @@ const llvm::fltSemantics &FloatType::getFloatSemantics() const {
   llvm_unreachable("non-floating point type used");
 }
 
-unsigned Type::getIntOrFloatBitWidth() const {
+unsigned Type::getIntOrFloatBitWidth() {
   assert(isIntOrFloat() && "only ints and floats have a bitwidth");
   if (auto intType = dyn_cast<IntegerType>()) {
     return intType.getWidth();
@@ -100,61 +121,39 @@ unsigned Type::getIntOrFloatBitWidth() const {
 }
 
 //===----------------------------------------------------------------------===//
-// VectorOrTensorType
+// ShapedType
 //===----------------------------------------------------------------------===//
 
-Type VectorOrTensorType::getElementType() const {
-  return static_cast<ImplType *>(type)->elementType;
+Type ShapedType::getElementType() const {
+  return static_cast<ImplType *>(impl)->elementType;
 }
 
-unsigned VectorOrTensorType::getElementTypeBitWidth() const {
+unsigned ShapedType::getElementTypeBitWidth() const {
   return getElementType().getIntOrFloatBitWidth();
 }
 
-unsigned VectorOrTensorType::getNumElements() const {
-  switch (getKind()) {
-  case StandardTypes::Vector:
-  case StandardTypes::RankedTensor: {
-    assert(hasStaticShape() && "expected type to have static shape");
-    auto shape = getShape();
-    unsigned num = 1;
-    for (auto dim : shape)
-      num *= dim;
-    return num;
-  }
-  default:
-    llvm_unreachable("not a VectorOrTensorType or not ranked");
-  }
+int64_t ShapedType::getNumElements() const {
+  assert(hasStaticShape() && "cannot get element count of dynamic shaped type");
+  auto shape = getShape();
+  int64_t num = 1;
+  for (auto dim : shape)
+    num *= dim;
+  return num;
 }
 
-/// If this is ranked tensor or vector type, return the rank. If it is an
-/// unranked tensor, return -1.
-int64_t VectorOrTensorType::getRank() const {
-  switch (getKind()) {
-  case StandardTypes::Vector:
-  case StandardTypes::RankedTensor:
-    return getShape().size();
-  case StandardTypes::UnrankedTensor:
-    return -1;
-  default:
-    llvm_unreachable("not a VectorOrTensorType");
-  }
+int64_t ShapedType::getRank() const { return getShape().size(); }
+
+bool ShapedType::hasRank() const { return !isa<UnrankedTensorType>(); }
+
+int64_t ShapedType::getDimSize(int64_t i) const {
+  assert(i >= 0 && i < getRank() && "invalid index for shaped type");
+  return getShape()[i];
 }
 
-int64_t VectorOrTensorType::getDimSize(unsigned i) const {
-  switch (getKind()) {
-  case StandardTypes::Vector:
-  case StandardTypes::RankedTensor:
-    return getShape()[i];
-  default:
-    llvm_unreachable("not a VectorOrTensorType or not ranked");
-  }
-}
-
-// Get the number of number of bits require to store a value of the given vector
-// or tensor types.  Compute the value recursively since tensors are allowed to
-// have vectors as elements.
-int64_t VectorOrTensorType::getSizeInBits() const {
+/// Get the number of bits require to store a value of the given shaped type.
+/// Compute the value recursively since tensors are allowed to have vectors as
+/// elements.
+int64_t ShapedType::getSizeInBits() const {
   assert(hasStaticShape() &&
          "cannot get the bit size of an aggregate with a dynamic shape");
 
@@ -162,28 +161,33 @@ int64_t VectorOrTensorType::getSizeInBits() const {
   if (elementType.isIntOrFloat())
     return elementType.getIntOrFloatBitWidth() * getNumElements();
 
-  // Tensors can have vectors and other tensors as elements, vectors cannot.
-  assert(!isa<VectorType>() && "unsupported vector element type");
-  auto elementVectorOrTensorType = elementType.dyn_cast<VectorOrTensorType>();
-  assert(elementVectorOrTensorType && "unsupported tensor element type");
-  return getNumElements() * elementVectorOrTensorType.getSizeInBits();
+  // Tensors can have vectors and other tensors as elements, other shaped types
+  // cannot.
+  assert(isa<TensorType>() && "unsupported element type");
+  assert((elementType.isa<VectorType>() || elementType.isa<TensorType>()) &&
+         "unsupported tensor element type");
+  return getNumElements() * elementType.cast<ShapedType>().getSizeInBits();
 }
 
-ArrayRef<int64_t> VectorOrTensorType::getShape() const {
+ArrayRef<int64_t> ShapedType::getShape() const {
   switch (getKind()) {
   case StandardTypes::Vector:
     return cast<VectorType>().getShape();
   case StandardTypes::RankedTensor:
     return cast<RankedTensorType>().getShape();
+  case StandardTypes::MemRef:
+    return cast<MemRefType>().getShape();
   default:
-    llvm_unreachable("not a VectorOrTensorType or not ranked");
+    llvm_unreachable("not a ShapedType or not ranked");
   }
 }
 
-bool VectorOrTensorType::hasStaticShape() const {
-  if (isa<UnrankedTensorType>())
-    return false;
-  return llvm::none_of(getShape(), [](int64_t i) { return i < 0; });
+int64_t ShapedType::getNumDynamicDims() const {
+  return llvm::count_if(getShape(), isDynamic);
+}
+
+bool ShapedType::hasStaticShape() const {
+  return hasRank() && llvm::none_of(getShape(), isDynamic);
 }
 
 //===----------------------------------------------------------------------===//
@@ -206,20 +210,19 @@ LogicalResult VectorType::verifyConstructionInvariants(
     Type elementType) {
   if (shape.empty()) {
     if (loc)
-      context->emitError(*loc, "vector types must have at least one dimension");
+      emitError(*loc, "vector types must have at least one dimension");
     return failure();
   }
 
   if (!isValidElementType(elementType)) {
     if (loc)
-      context->emitError(*loc, "vector elements must be int or float type");
+      emitError(*loc, "vector elements must be int or float type");
     return failure();
   }
 
   if (any_of(shape, [](int64_t i) { return i <= 0; })) {
     if (loc)
-      context->emitError(*loc,
-                         "vector types must have positive constant sizes");
+      emitError(*loc, "vector types must have positive constant sizes");
     return failure();
   }
   return success();
@@ -238,7 +241,7 @@ static inline LogicalResult checkTensorElementType(Optional<Location> location,
                                                    Type elementType) {
   if (!TensorType::isValidElementType(elementType)) {
     if (location)
-      context->emitError(*location, "invalid tensor element type");
+      emitError(*location, "invalid tensor element type");
     return failure();
   }
   return success();
@@ -267,7 +270,7 @@ LogicalResult RankedTensorType::verifyConstructionInvariants(
   for (int64_t s : shape) {
     if (s < -1) {
       if (loc)
-        context->emitError(*loc, "invalid tensor dimension size");
+        emitError(*loc, "invalid tensor dimension size");
       return failure();
     }
   }
@@ -302,6 +305,32 @@ LogicalResult UnrankedTensorType::verifyConstructionInvariants(
 // MemRefType
 //===----------------------------------------------------------------------===//
 
+/// Get or create a new MemRefType based on shape, element type, affine
+/// map composition, and memory space.  Assumes the arguments define a
+/// well-formed MemRef type.  Use getChecked to gracefully handle MemRefType
+/// construction failures.
+MemRefType MemRefType::get(ArrayRef<int64_t> shape, Type elementType,
+                           ArrayRef<AffineMap> affineMapComposition,
+                           unsigned memorySpace) {
+  auto result = getImpl(shape, elementType, affineMapComposition, memorySpace,
+                        /*location=*/llvm::None);
+  assert(result && "Failed to construct instance of MemRefType.");
+  return result;
+}
+
+/// Get or create a new MemRefType based on shape, element type, affine
+/// map composition, and memory space declared at the given location.
+/// If the location is unknown, the last argument should be an instance of
+/// UnknownLoc.  If the MemRefType defined by the arguments would be
+/// ill-formed, emits errors (to the handler registered with the context or to
+/// the error stream) and returns nullptr.
+MemRefType MemRefType::getChecked(ArrayRef<int64_t> shape, Type elementType,
+                                  ArrayRef<AffineMap> affineMapComposition,
+                                  unsigned memorySpace, Location location) {
+  return getImpl(shape, elementType, affineMapComposition, memorySpace,
+                 location);
+}
+
 /// Get or create a new MemRefType defined by the arguments.  If the resulting
 /// type would be ill-formed, return nullptr.  If the location is provided,
 /// emit detailed error messages.  To emit errors when the location is unknown,
@@ -314,9 +343,9 @@ MemRefType MemRefType::getImpl(ArrayRef<int64_t> shape, Type elementType,
 
   for (int64_t s : shape) {
     // Negative sizes are not allowed except for `-1` that means dynamic size.
-    if (s <= 0 && s != -1) {
+    if (s < -1) {
       if (location)
-        context->emitError(*location, "invalid memref size");
+        emitError(*location, "invalid memref size");
       return {};
     }
   }
@@ -329,12 +358,11 @@ MemRefType MemRefType::getImpl(ArrayRef<int64_t> shape, Type elementType,
   for (const auto &affineMap : affineMapComposition) {
     if (affineMap.getNumDims() != dim) {
       if (location)
-        context->emitError(
-            *location,
-            "memref affine map dimension mismatch between " +
-                (i == 0 ? Twine("memref rank") : "affine map " + Twine(i)) +
-                " and affine map" + Twine(i + 1) + ": " + Twine(dim) +
-                " != " + Twine(affineMap.getNumDims()));
+        emitError(*location)
+            << "memref affine map dimension mismatch between "
+            << (i == 0 ? Twine("memref rank") : "affine map " + Twine(i))
+            << " and affine map" << i + 1 << ": " << dim
+            << " != " << affineMap.getNumDims();
       return nullptr;
     }
 
@@ -342,12 +370,12 @@ MemRefType MemRefType::getImpl(ArrayRef<int64_t> shape, Type elementType,
     ++i;
   }
 
-  // Drop the unbounded identity maps from the composition.
+  // Drop identity maps from the composition.
   // This may lead to the composition becoming empty, which is interpreted as an
   // implicit identity.
   llvm::SmallVector<AffineMap, 2> cleanedAffineMapComposition;
   for (const auto &map : affineMapComposition) {
-    if (map.isIdentity() && !map.isBounded())
+    if (map.isIdentity())
       continue;
     cleanedAffineMapComposition.push_back(map);
   }
@@ -356,25 +384,13 @@ MemRefType MemRefType::getImpl(ArrayRef<int64_t> shape, Type elementType,
                    cleanedAffineMapComposition, memorySpace);
 }
 
-ArrayRef<int64_t> MemRefType::getShape() const {
-  return static_cast<ImplType *>(type)->getShape();
-}
-
-Type MemRefType::getElementType() const {
-  return static_cast<ImplType *>(type)->elementType;
-}
+ArrayRef<int64_t> MemRefType::getShape() const { return getImpl()->getShape(); }
 
 ArrayRef<AffineMap> MemRefType::getAffineMaps() const {
-  return static_cast<ImplType *>(type)->getAffineMaps();
+  return getImpl()->getAffineMaps();
 }
 
-unsigned MemRefType::getMemorySpace() const {
-  return static_cast<ImplType *>(type)->memorySpace;
-}
-
-unsigned MemRefType::getNumDynamicDims() const {
-  return llvm::count_if(getShape(), [](int64_t i) { return i < 0; });
-}
+unsigned MemRefType::getMemorySpace() const { return getImpl()->memorySpace; }
 
 //===----------------------------------------------------------------------===//
 /// ComplexType
@@ -395,7 +411,7 @@ LogicalResult ComplexType::verifyConstructionInvariants(
     llvm::Optional<Location> loc, MLIRContext *context, Type elementType) {
   if (!elementType.isa<FloatType>() && !elementType.isa<IntegerType>()) {
     if (loc)
-      context->emitError(*loc, "invalid element type for complex");
+      emitError(*loc, "invalid element type for complex");
     return failure();
   }
   return success();
@@ -416,5 +432,18 @@ TupleType TupleType::get(ArrayRef<Type> elementTypes, MLIRContext *context) {
 /// Return the elements types for this tuple.
 ArrayRef<Type> TupleType::getTypes() const { return getImpl()->getTypes(); }
 
+/// Accumulate the types contained in this tuple and tuples nested within it.
+/// Note that this only flattens nested tuples, not any other container type,
+/// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
+/// (i32, tensor<i32>, f32, i64)
+void TupleType::getFlattenedTypes(SmallVectorImpl<Type> &types) {
+  for (Type type : getTypes()) {
+    if (auto nestedTuple = type.dyn_cast<TupleType>())
+      nestedTuple.getFlattenedTypes(types);
+    else
+      types.push_back(type);
+  }
+}
+
 /// Return the number of element types.
-unsigned TupleType::size() const { return getImpl()->size(); }
+size_t TupleType::size() const { return getImpl()->size(); }

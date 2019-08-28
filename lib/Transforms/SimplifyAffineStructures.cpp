@@ -1,4 +1,4 @@
-//===- SimplifyAffineStructures.cpp - ---------------------------*- C++ -*-===//
+//===- SimplifyAffineStructures.cpp ---------------------------------------===//
 //
 // Copyright 2019 The MLIR Authors.
 //
@@ -20,6 +20,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Analysis/AffineStructures.h"
+#include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/IR/Operation.h"
@@ -87,8 +88,8 @@ struct SimplifyAffineStructures
 
 } // end anonymous namespace
 
-FunctionPassBase *mlir::createSimplifyAffineStructuresPass() {
-  return new SimplifyAffineStructures();
+std::unique_ptr<FunctionPassBase> mlir::createSimplifyAffineStructuresPass() {
+  return std::make_unique<SimplifyAffineStructures>();
 }
 
 void SimplifyAffineStructures::runOnFunction() {

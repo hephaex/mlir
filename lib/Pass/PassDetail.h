@@ -23,6 +23,20 @@ namespace mlir {
 namespace detail {
 
 //===----------------------------------------------------------------------===//
+// Verifier Passes
+//===----------------------------------------------------------------------===//
+
+/// Pass to verify a function and signal failure if necessary.
+class FunctionVerifierPass : public FunctionPass<FunctionVerifierPass> {
+  void runOnFunction() override;
+};
+
+/// Pass to verify a module and signal failure if necessary.
+class ModuleVerifierPass : public ModulePass<ModuleVerifierPass> {
+  void runOnModule() override;
+};
+
+//===----------------------------------------------------------------------===//
 // PassExecutor
 //===----------------------------------------------------------------------===//
 
@@ -48,11 +62,13 @@ public:
   FunctionPassExecutor(const FunctionPassExecutor &rhs);
 
   /// Run the executor on the given function.
-  LogicalResult run(Function *function, FunctionAnalysisManager &fam);
+  LogicalResult run(FuncOp function, FunctionAnalysisManager &fam);
 
   /// Add a pass to the current executor. This takes ownership over the provided
   /// pass pointer.
-  void addPass(FunctionPassBase *pass) { passes.emplace_back(pass); }
+  void addPass(std::unique_ptr<FunctionPassBase> pass) {
+    passes.push_back(std::move(pass));
+  }
 
   /// Returns the number of passes held by this executor.
   size_t size() const { return passes.size(); }
@@ -76,11 +92,13 @@ public:
   ModulePassExecutor &operator=(const ModulePassExecutor &) = delete;
 
   /// Run the executor on the given module.
-  LogicalResult run(Module *module, ModuleAnalysisManager &mam);
+  LogicalResult run(ModuleOp module, ModuleAnalysisManager &mam);
 
   /// Add a pass to the current executor. This takes ownership over the provided
   /// pass pointer.
-  void addPass(ModulePassBase *pass) { passes.emplace_back(pass); }
+  void addPass(std::unique_ptr<ModulePassBase> pass) {
+    passes.push_back(std::move(pass));
+  }
 
   static bool classof(const PassExecutor *pe) {
     return pe->getKind() == Kind::ModuleExecutor;
@@ -144,6 +162,11 @@ inline bool isModuleToFunctionAdaptorPass(Pass *pass) {
 /// ModuleToFunctionPassAdaptor.
 inline bool isAdaptorPass(Pass *pass) {
   return isModuleToFunctionAdaptorPass(pass);
+}
+
+/// Utility function to return if a pass refers to a verifier pass.
+inline bool isVerifierPass(Pass *pass) {
+  return isa<FunctionVerifierPass>(pass) || isa<ModuleVerifierPass>(pass);
 }
 
 } // end namespace detail

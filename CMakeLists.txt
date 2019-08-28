@@ -1,15 +1,10 @@
 # MLIR project.
-set(MLIR_MAIN_SRC_DIR ${LLVM_MAIN_SRC_DIR}/projects/mlir/include ) # --src-root
+set(MLIR_MAIN_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include ) # --src-root
 set(MLIR_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include ) # --includedir
 set(MLIR_TABLEGEN_EXE mlir-tblgen)
 
 set(MLIR_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(MLIR_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
-
-# TODO: Temporary, remove when no longer needed.
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 function(mlir_tablegen ofn)
   tablegen(MLIR ${ARGV} "-I${MLIR_MAIN_SRC_DIR}" "-I${MLIR_INCLUDE_DIR}")
@@ -21,12 +16,16 @@ endfunction()
 # factored out a bit.
 function(whole_archive_link target)
   if("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
-    set(link_flags "-Llib -Wl,-all_load ")
+    set(link_flags "-L${CMAKE_BINARY_DIR}/lib ")
     FOREACH(LIB ${ARGN})
-      string(CONCAT link_flags ${link_flags} "-l${LIB} ")
+      string(CONCAT link_flags ${link_flags} "-Wl,-force_load ${CMAKE_BINARY_DIR}/lib/lib${LIB}.a ")
+    ENDFOREACH(LIB)
+  elseif(MSVC)
+    FOREACH(LIB ${ARGN})
+      string(CONCAT link_flags ${link_flags} "/WHOLEARCHIVE:${LIB} ")
     ENDFOREACH(LIB)
   else()
-    set(link_flags "-Llib -Wl,--whole-archive,")
+    set(link_flags "-L${CMAKE_BINARY_DIR}/lib -Wl,--whole-archive,")
     FOREACH(LIB ${ARGN})
       string(CONCAT link_flags ${link_flags} "-l${LIB},")
     ENDFOREACH(LIB)
@@ -34,6 +33,16 @@ function(whole_archive_link target)
   endif()
   set_target_properties(${target} PROPERTIES LINK_FLAGS ${link_flags})
 endfunction(whole_archive_link)
+
+# Build the CUDA conversions and run according tests if the NVPTX backend
+# is available
+if ("NVPTX" IN_LIST LLVM_TARGETS_TO_BUILD)
+  set(MLIR_CUDA_CONVERSIONS_ENABLED 1)
+else()
+  set(MLIR_CUDA_CONVERSIONS_ENABLED 0)
+endif()
+
+set(MLIR_CUDA_RUNNER_ENABLED 0 CACHE BOOL "Enable building the mlir CUDA runner")
 
 include_directories( "include")
 include_directories( ${MLIR_INCLUDE_DIR})

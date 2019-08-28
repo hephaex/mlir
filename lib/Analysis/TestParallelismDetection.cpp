@@ -19,9 +19,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mlir/AffineOps/AffineOps.h"
 #include "mlir/Analysis/Passes.h"
 #include "mlir/Analysis/Utils.h"
+#include "mlir/Dialect/AffineOps/AffineOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 
@@ -43,11 +43,13 @@ FunctionPassBase *mlir::createParallelismDetectionTestPass() {
 // Walks the function and emits a note for all 'affine.for' ops detected as
 // parallel.
 void TestParallelismDetection::runOnFunction() {
-  Function &f = getFunction();
-  FuncBuilder b(f);
+  FuncOp f = getFunction();
+  OpBuilder b(f.getBody());
   f.walk<AffineForOp>([&](AffineForOp forOp) {
     if (isLoopParallel(forOp))
-      forOp.emitNote("parallel loop");
+      forOp.emitRemark("parallel loop");
+    else
+      forOp.emitRemark("sequential loop");
   });
 }
 

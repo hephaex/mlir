@@ -1,4 +1,4 @@
-//===- Translation.cpp - Translation registry -------------------*- C++ -*-===//
+//===- Translation.cpp - Translation registry -----------------------------===//
 //
 // Copyright 2019 The MLIR Authors.
 //
@@ -20,7 +20,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Translation.h"
+#include "mlir/IR/Module.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/Support/ManagedStatic.h"
 
 using namespace mlir;
@@ -57,7 +59,8 @@ TranslateFromMLIRRegistration::TranslateFromMLIRRegistration(
       translationFromMLIRRegistry.end())
     llvm::report_fatal_error(
         "Attempting to overwrite an existing <from> function");
-  assert(function && "Attempting to register an empty translate <to> function");
+  assert(function &&
+         "Attempting to register an empty translate <from> function");
   translationFromMLIRRegistry[name] = function;
 }
 

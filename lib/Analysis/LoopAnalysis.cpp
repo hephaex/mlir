@@ -21,18 +21,18 @@
 
 #include "mlir/Analysis/LoopAnalysis.h"
 
-#include "mlir/AffineOps/AffineOps.h"
 #include "mlir/Analysis/AffineAnalysis.h"
 #include "mlir/Analysis/AffineStructures.h"
 #include "mlir/Analysis/NestedMatcher.h"
 #include "mlir/Analysis/VectorAnalysis.h"
+#include "mlir/Dialect/AffineOps/AffineOps.h"
+#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/VectorOps/VectorOps.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/StandardOps/Ops.h"
 #include "mlir/Support/Functional.h"
 #include "mlir/Support/MathExtras.h"
-#include "mlir/VectorOps/VectorOps.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
@@ -54,7 +54,7 @@ void mlir::buildTripCountMapAndOperands(
   int64_t loopSpan;
 
   int64_t step = forOp.getStep();
-  FuncBuilder b(forOp.getOperation());
+  OpBuilder b(forOp.getOperation());
 
   if (forOp.hasConstantBounds()) {
     int64_t lb = forOp.getConstantLowerBound();
@@ -80,7 +80,7 @@ void mlir::buildTripCountMapAndOperands(
   for (auto ubExpr : ubMap.getResults())
     ubs.push_back(b.create<AffineApplyOp>(
         forOp.getLoc(),
-        b.getAffineMap(ubMap.getNumDims(), ubMap.getNumSymbols(), {ubExpr}, {}),
+        b.getAffineMap(ubMap.getNumDims(), ubMap.getNumSymbols(), {ubExpr}),
         ubOperands));
 
   tripCountOperands->clear();
@@ -92,7 +92,7 @@ void mlir::buildTripCountMapAndOperands(
   for (unsigned i = 0, e = ubs.size(); i < e; i++)
     tripCountExprs[i] =
         (b.getAffineDimExpr(1 + i) - b.getAffineDimExpr(0)).ceilDiv(step);
-  *map = b.getAffineMap(1 + ubs.size(), 0, tripCountExprs, {});
+  *map = b.getAffineMap(1 + ubs.size(), 0, tripCountExprs);
 
   fullyComposeAffineMapAndOperands(map, tripCountOperands);
   *map = simplifyAffineMap(*map);
@@ -186,13 +186,13 @@ bool mlir::isAccessInvariant(Value *iv, Value *index) {
   }
 
   if (affineApplyOps.size() > 1) {
-    affineApplyOps[0]->emitNote(
+    affineApplyOps[0]->emitRemark(
         "CompositionAffineMapsPass must have been run: there should be at most "
         "one AffineApplyOp, returning false conservatively.");
     return false;
   }
 
-  auto composeOp = affineApplyOps[0]->cast<AffineApplyOp>();
+  auto composeOp = cast<AffineApplyOp>(affineApplyOps[0]);
   // We need yet another level of indirection because the `dim` index of the
   // access may not correspond to the `dim` index of composeOp.
   return !(AffineValueMap(composeOp).isFunctionOf(0, iv));
@@ -232,8 +232,8 @@ mlir::getInvariantAccesses(Value *iv, llvm::ArrayRef<Value *> indices) {
 template <typename LoadOrStoreOp>
 static bool isContiguousAccess(Value *iv, LoadOrStoreOp memoryOp,
                                int *memRefDim) {
-  static_assert(std::is_same<LoadOrStoreOp, LoadOp>::value ||
-                    std::is_same<LoadOrStoreOp, StoreOp>::value,
+  static_assert(std::is_same<LoadOrStoreOp, AffineLoadOp>::value ||
+                    std::is_same<LoadOrStoreOp, AffineStoreOp>::value,
                 "Must be called on either const LoadOp & or const StoreOp &");
   assert(memRefDim && "memRefDim == nullptr");
   auto memRefType = memoryOp.getMemRefType();
@@ -250,25 +250,35 @@ static bool isContiguousAccess(Value *iv, LoadOrStoreOp memoryOp,
   }
 
   int uniqueVaryingIndexAlongIv = -1;
-  auto indices = memoryOp.getIndices();
-  unsigned numIndices = llvm::size(indices);
-  unsigned dim = 0;
-  for (auto *index : indices) {
-    if (!isAccessInvariant(iv, index)) {
-      if (uniqueVaryingIndexAlongIv != -1) {
-        // 2+ varying indices -> do not vectorize along iv.
-        return false;
+  auto accessMap = memoryOp.getAffineMap();
+  SmallVector<Value *, 4> mapOperands(memoryOp.getIndices());
+  unsigned numDims = accessMap.getNumDims();
+  for (unsigned i = 0, e = memRefType.getRank(); i < e; ++i) {
+    // Gather map operands used result expr 'i' in 'exprOperands'.
+    SmallVector<Value *, 4> exprOperands;
+    auto resultExpr = accessMap.getResult(i);
+    resultExpr.walk([&](AffineExpr expr) {
+      if (auto dimExpr = expr.dyn_cast<AffineDimExpr>())
+        exprOperands.push_back(mapOperands[dimExpr.getPosition()]);
+      else if (auto symExpr = expr.dyn_cast<AffineSymbolExpr>())
+        exprOperands.push_back(mapOperands[numDims + symExpr.getPosition()]);
+    });
+    // Check access invariance of each operand in 'exprOperands'.
+    for (auto *exprOperand : exprOperands) {
+      if (!isAccessInvariant(iv, exprOperand)) {
+        if (uniqueVaryingIndexAlongIv != -1) {
+          // 2+ varying indices -> do not vectorize along iv.
+          return false;
+        }
+        uniqueVaryingIndexAlongIv = i;
       }
-      uniqueVaryingIndexAlongIv = dim;
     }
-    ++dim;
   }
 
   if (uniqueVaryingIndexAlongIv == -1)
     *memRefDim = -1;
   else
-    *memRefDim = numIndices - (uniqueVaryingIndexAlongIv + 1);
-
+    *memRefDim = memRefType.getRank() - (uniqueVaryingIndexAlongIv + 1);
   return true;
 }
 
@@ -279,7 +289,8 @@ static bool isVectorElement(LoadOrStoreOpPointer memoryOp) {
 }
 
 static bool isVectorTransferReadOrWrite(Operation &op) {
-  return op.isa<VectorTransferReadOp>() || op.isa<VectorTransferWriteOp>();
+  return isa<vector::VectorTransferReadOp>(op) ||
+         isa<vector::VectorTransferWriteOp>(op);
 }
 
 using VectorizableOpFun = std::function<bool(AffineForOp, Operation &)>;
@@ -300,7 +311,7 @@ isVectorizableLoopBodyWithOpCond(AffineForOp loop,
   // No vectorization across unknown regions.
   auto regions = matcher::Op([](Operation &op) -> bool {
     return op.getNumRegions() != 0 &&
-           !(op.isa<AffineIfOp>() || op.isa<AffineForOp>());
+           !(isa<AffineIfOp>(op) || isa<AffineForOp>(op));
   });
   SmallVector<NestedMatch, 8> regionsMatched;
   regions.match(forOp, &regionsMatched);
@@ -320,8 +331,8 @@ isVectorizableLoopBodyWithOpCond(AffineForOp loop,
   loadAndStores.match(forOp, &loadAndStoresMatched);
   for (auto ls : loadAndStoresMatched) {
     auto *op = ls.getMatchedOperation();
-    auto load = op->dyn_cast<LoadOp>();
-    auto store = op->dyn_cast<StoreOp>();
+    auto load = dyn_cast<AffineLoadOp>(op);
+    auto store = dyn_cast<AffineStoreOp>(op);
     // Only scalar types are considered vectorizable, all load/store must be
     // vectorizable for a loop to qualify as vectorizable.
     // TODO(ntv): ponder whether we want to be more general here.
@@ -338,8 +349,8 @@ isVectorizableLoopBodyWithOpCond(AffineForOp loop,
 
 bool mlir::isVectorizableLoopBody(AffineForOp loop, int *memRefDim) {
   VectorizableOpFun fun([memRefDim](AffineForOp loop, Operation &op) {
-    auto load = op.dyn_cast<LoadOp>();
-    auto store = op.dyn_cast<StoreOp>();
+    auto load = dyn_cast<AffineLoadOp>(op);
+    auto store = dyn_cast<AffineStoreOp>(op);
     return load ? isContiguousAccess(loop.getInductionVar(), load, memRefDim)
                 : isContiguousAccess(loop.getInductionVar(), store, memRefDim);
   });
@@ -376,10 +387,10 @@ bool mlir::isInstwiseShiftValid(AffineForOp forOp, ArrayRef<uint64_t> shifts) {
     // Validate the results of this operation if it were to be shifted.
     for (unsigned i = 0, e = op.getNumResults(); i < e; ++i) {
       Value *result = op.getResult(i);
-      for (const auto &use : result->getUses()) {
+      for (auto *user : result->getUsers()) {
         // If an ancestor operation doesn't lie in the block of forOp,
         // there is no shift to check.
-        if (auto *ancInst = forBody->findAncestorInstInBlock(*use.getOwner())) {
+        if (auto *ancInst = forBody->findAncestorInstInBlock(*user)) {
           assert(forBodyShift.count(ancInst) > 0 && "ancestor expected in map");
           if (shift != forBodyShift[ancInst])
             return false;

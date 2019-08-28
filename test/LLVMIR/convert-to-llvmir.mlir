@@ -1,4 +1,4 @@
-// RUN: mlir-opt -convert-to-llvmir %s | FileCheck %s
+// RUN: mlir-opt -lower-to-llvm %s | FileCheck %s
 
 // CHECK-LABEL: func @empty() {
 // CHECK-NEXT:  llvm.return
@@ -330,9 +330,9 @@ func @multireturn() -> (i64, f32, memref<42x?x10x?xf32>) {
   %1 = call @get_f32() : () -> (f32)
   %2 = call @get_memref() : () -> (memref<42x?x10x?xf32>)
 // CHECK-NEXT:  {{.*}} = llvm.undef : !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[0] : !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[1] : !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[2] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[0 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[1 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.insertvalue {{.*}}, {{.*}}[2 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
 // CHECK-NEXT:  llvm.return {{.*}} : !llvm<"{ i64, float, { float*, i64, i64 } }">
   return %0, %1, %2 : i64, f32, memref<42x?x10x?xf32>
 }
@@ -342,9 +342,9 @@ func @multireturn() -> (i64, f32, memref<42x?x10x?xf32>) {
 func @multireturn_caller() {
 ^bb0:
 // CHECK-NEXT:  {{.*}} = llvm.call @multireturn() : () -> !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[0] : !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[1] : !llvm<"{ i64, float, { float*, i64, i64 } }">
-// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[2] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[0 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[1 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
+// CHECK-NEXT:  {{.*}} = llvm.extractvalue {{.*}}[2 : index] : !llvm<"{ i64, float, { float*, i64, i64 } }">
   %0:3 = call @multireturn() : () -> (i64, f32, memref<42x?x10x?xf32>)
   %1 = constant 42 : i64
 // CHECK:       {{.*}} = llvm.add {{.*}}, {{.*}} : !llvm.i64
@@ -359,8 +359,8 @@ func @multireturn_caller() {
 // CHECK-LABEL: func @vector_ops(%arg0: !llvm<"<4 x float>">, %arg1: !llvm<"<4 x i1>">, %arg2: !llvm<"<4 x i64>">) -> !llvm<"<4 x float>"> {
 func @vector_ops(vector<4xf32>, vector<4xi1>, vector<4xi64>) -> vector<4xf32> {
 ^bb0(%arg0: vector<4xf32>, %arg1: vector<4xi1>, %arg2: vector<4xi64>):
-// CHECK-NEXT:  %0 = llvm.constant(splat<vector<4xf32>, 4.200000e+01>) : !llvm<"<4 x float>">
-  %0 = constant splat<vector<4xf32>, 42.> : vector<4xf32>
+// CHECK-NEXT:  %0 = llvm.constant(dense<4.200000e+01> : vector<4xf32>) : !llvm<"<4 x float>">
+  %0 = constant dense<42.> : vector<4xf32>
 // CHECK-NEXT:  %1 = llvm.fadd %arg0, %0 : !llvm<"<4 x float>">
   %1 = addf %arg0, %0 : vector<4xf32>
 // CHECK-NEXT:  %2 = llvm.sdiv %arg2, %arg2 : !llvm<"<4 x i64>">
@@ -375,6 +375,12 @@ func @vector_ops(vector<4xf32>, vector<4xi1>, vector<4xi64>) -> vector<4xf32> {
   %7 = divf %arg0, %0 : vector<4xf32>
 // CHECK-NEXT:  %7 = llvm.frem %arg0, %0 : !llvm<"<4 x float>">
   %8 = remf %arg0, %0 : vector<4xf32>
+// CHECK-NEXT:  %8 = llvm.and %arg2, %arg2 : !llvm<"<4 x i64>">
+  %9 = and %arg2, %arg2 : vector<4xi64>
+// CHECK-NEXT:  %9 = llvm.or %arg2, %arg2 : !llvm<"<4 x i64>">
+  %10 = or %arg2, %arg2 : vector<4xi64>
+// CHECK-NEXT:  %10 = llvm.xor %arg2, %arg2 : !llvm<"<4 x i64>">
+  %11 = xor %arg2, %arg2 : vector<4xi64>
   return %1 : vector<4xf32>
 }
 
@@ -401,8 +407,40 @@ func @ops(f32, f32, i32, i32) -> (f32, i32) {
   %9 = divf %arg0, %arg1 : f32
 // CHECK-NEXT:  %9 = llvm.frem %arg0, %arg1 : !llvm.float
   %10 = remf %arg0, %arg1 : f32
+// CHECK-NEXT: %10 = llvm.and %arg2, %arg3 : !llvm.i32
+  %11 = and %arg2, %arg3 : i32
+// CHECK-NEXT: %11 = llvm.or %arg2, %arg3 : !llvm.i32
+  %12 = or %arg2, %arg3 : i32
+// CHECK-NEXT: %12 = llvm.xor %arg2, %arg3 : !llvm.i32
+  %13 = xor %arg2, %arg3 : i32
 
   return %0, %4 : f32, i32
+}
+
+// Checking conversion of index types to integers using i1, assuming no target
+// system would have a 1-bit address space.  Otherwise, we would have had to
+// make this test dependent on the pointer size on the target system.
+// CHECK-LABEL: @index_cast
+func @index_cast(%arg0: index, %arg1: i1) {
+// CHECK-NEXT: = llvm.trunc %arg0 : !llvm.i{{.*}} to !llvm.i1
+  %0 = index_cast %arg0: index to i1
+// CHECK-NEXT: = llvm.sext %arg1 : !llvm.i1 to !llvm.i{{.*}}
+  %1 = index_cast %arg1: i1 to index
+  return
+}
+
+// Checking conversion of integer types to floating point.
+// CHECK-LABEL: @sitofp
+func @sitofp(%arg0 : i32, %arg1 : i64) {
+// CHECK-NEXT: = llvm.sitofp {{.*}} : !llvm.i{{.*}} to !llvm.float
+  %0 = sitofp %arg0: i32 to f32
+// CHECK-NEXT: = llvm.sitofp {{.*}} : !llvm.i{{.*}} to !llvm.double
+  %1 = sitofp %arg0: i32 to f64
+// CHECK-NEXT: = llvm.sitofp {{.*}} : !llvm.i{{.*}} to !llvm.float
+  %2 = sitofp %arg1: i64 to f32
+// CHECK-NEXT: = llvm.sitofp {{.*}} : !llvm.i{{.*}} to !llvm.double
+  %3 = sitofp %arg1: i64 to f64
+  return
 }
 
 // CHECK-LABEL: @dfs_block_order
@@ -438,4 +476,65 @@ func @cond_br_same_target(%arg0: i1, %arg1: i32, %arg2 : i32) -> (i32) {
 
 // CHECK:      ^[[dummyBlock]]:
 // CHECK-NEXT:  llvm.br ^[[origBlock]](%arg2 : !llvm.i32)
+}
+
+// CHECK-LABEL: func @fcmp(%arg0: !llvm.float, %arg1: !llvm.float) {
+func @fcmp(f32, f32) -> () {
+^bb0(%arg0: f32, %arg1: f32):
+  // CHECK:      llvm.fcmp "oeq" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ogt" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "oge" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "olt" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ole" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "one" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ord" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ueq" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ugt" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "uge" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ult" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "ule" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "une" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.fcmp "uno" %arg0, %arg1 : !llvm.float
+  // CHECK-NEXT: llvm.return
+  %1 = cmpf "oeq", %arg0, %arg1 : f32
+  %2 = cmpf "ogt", %arg0, %arg1 : f32
+  %3 = cmpf "oge", %arg0, %arg1 : f32
+  %4 = cmpf "olt", %arg0, %arg1 : f32
+  %5 = cmpf "ole", %arg0, %arg1 : f32
+  %6 = cmpf "one", %arg0, %arg1 : f32
+  %7 = cmpf "ord", %arg0, %arg1 : f32
+  %8 = cmpf "ueq", %arg0, %arg1 : f32
+  %9 = cmpf "ugt", %arg0, %arg1 : f32
+  %10 = cmpf "uge", %arg0, %arg1 : f32
+  %11 = cmpf "ult", %arg0, %arg1 : f32
+  %12 = cmpf "ule", %arg0, %arg1 : f32
+  %13 = cmpf "une", %arg0, %arg1 : f32
+  %14 = cmpf "uno", %arg0, %arg1 : f32
+
+  return
+}
+
+// CHECK-LABEL: @vec_bin
+func @vec_bin(%arg0: vector<2x2x2xf32>) -> vector<2x2x2xf32> {
+  %0 = addf %arg0, %arg0 : vector<2x2x2xf32>
+  return %0 : vector<2x2x2xf32>
+
+//  CHECK-NEXT: llvm.undef : !llvm<"[2 x [2 x <2 x float>]]">
+
+// This block appears 2x2 times
+//  CHECK-NEXT: llvm.extractvalue %{{.*}}[0 : index, 0 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//  CHECK-NEXT: llvm.extractvalue %{{.*}}[0 : index, 0 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//  CHECK-NEXT: llvm.fadd %{{.*}} : !llvm<"<2 x float>">
+//  CHECK-NEXT: llvm.insertvalue %{{.*}}[0 : index, 0 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+
+// We check the proper indexing of extract/insert in the remaining 3 positions.
+//       CHECK: llvm.extractvalue %{{.*}}[0 : index, 1 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//       CHECK: llvm.insertvalue %{{.*}}[0 : index, 1 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//       CHECK: llvm.extractvalue %{{.*}}[1 : index, 0 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//       CHECK: llvm.insertvalue %{{.*}}[1 : index, 0 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//       CHECK: llvm.extractvalue %{{.*}}[1 : index, 1 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+//       CHECK: llvm.insertvalue %{{.*}}[1 : index, 1 : index] : !llvm<"[2 x [2 x <2 x float>]]">
+
+// And we're done
+//   CHECK-NEXT: return
 }

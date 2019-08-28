@@ -27,7 +27,7 @@ class Any;
 
 namespace mlir {
 class FunctionPassBase;
-class Module;
+class ModuleOp;
 class ModulePassBase;
 class Pass;
 class PassInstrumentation;
@@ -60,7 +60,10 @@ public:
 
   /// Run the passes within this manager on the provided module.
   LLVM_NODISCARD
-  LogicalResult run(Module *module);
+  LogicalResult run(ModuleOp module);
+
+  /// Disable support for multi-threading within the pass manager.
+  void disableMultithreading(bool disable = true);
 
   //===--------------------------------------------------------------------===//
   // Pipeline Building
@@ -68,16 +71,16 @@ public:
 
   /// Add an opaque pass pointer to the current manager. This takes ownership
   /// over the provided pass pointer.
-  void addPass(Pass *pass);
+  void addPass(std::unique_ptr<Pass> pass);
 
   /// Add a module pass to the current manager. This takes ownership over the
   /// provided pass pointer.
-  void addPass(ModulePassBase *pass);
+  void addPass(std::unique_ptr<ModulePassBase> pass);
 
   /// Add a function pass to the current manager. This takes ownership over the
   /// provided pass pointer. This will automatically create a function pass
   /// executor if necessary.
-  void addPass(FunctionPassBase *pass);
+  void addPass(std::unique_ptr<FunctionPassBase> pass);
 
   //===--------------------------------------------------------------------===//
   // Instrumentations
@@ -118,6 +121,9 @@ private:
 
   /// Flag that specifies if pass timing is enabled.
   bool passTiming : 1;
+
+  /// Flag that specifies if multi-threading is disabled.
+  bool disableThreads : 1;
 
   /// A manager for pass instrumentations.
   std::unique_ptr<PassInstrumentor> instrumentor;

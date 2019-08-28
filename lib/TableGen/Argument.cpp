@@ -1,4 +1,4 @@
-//===- Argument.cpp - Argument definitions ----------------------*- C++ -*-===//
+//===- Argument.cpp - Argument definitions --------------------------------===//
 //
 // Copyright 2019 The MLIR Authors.
 //
@@ -16,19 +16,14 @@
 // =============================================================================
 
 #include "mlir/TableGen/Argument.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/TableGen/Record.h"
 
 using namespace mlir;
 
-std::string tblgen::NamedAttribute::getName() const {
-  // TODO(jpienaar): Revise this post dialect prefixing attribute discussion.
-  auto split = name.split("__");
-  if (split.second.empty())
-    return name;
-  return llvm::join_items(".", split.first, split.second);
-}
-
 bool tblgen::NamedTypeConstraint::hasPredicate() const {
   return !constraint.getPredicate().isNull();
+}
+
+bool tblgen::NamedTypeConstraint::isVariadic() const {
+  return constraint.isVariadic();
 }

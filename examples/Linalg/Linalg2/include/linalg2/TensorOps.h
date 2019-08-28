@@ -38,7 +38,8 @@ protected:
   //////////////////////////////////////////////////////////////////////////////
   /// Generic implementation of hooks that should be called from `ConcreteType`s
   mlir::LogicalResult verify();
-  static bool parse(mlir::OpAsmParser *parser, mlir::OperationState *result);
+  static mlir::ParseResult parse(mlir::OpAsmParser *parser,
+                                 mlir::OperationState *result);
   void print(mlir::OpAsmPrinter *p);
 
 public:
@@ -117,7 +118,8 @@ public:
     return build(b, result, {A, B, C});
   }
   mlir::LogicalResult verify();
-  static bool parse(mlir::OpAsmParser *parser, mlir::OperationState *result);
+  static mlir::ParseResult parse(mlir::OpAsmParser *parser,
+                                 mlir::OperationState *result);
   void print(mlir::OpAsmPrinter *p);
 
   //////////////////////////////////////////////////////////////////////////////
@@ -177,7 +179,8 @@ public:
     return build(b, result, {A, B, C});
   }
   mlir::LogicalResult verify();
-  static bool parse(mlir::OpAsmParser *parser, mlir::OperationState *result);
+  static mlir::ParseResult parse(mlir::OpAsmParser *parser,
+                                 mlir::OperationState *result);
   void print(mlir::OpAsmPrinter *p);
 
   //////////////////////////////////////////////////////////////////////////////
@@ -237,7 +240,8 @@ public:
     return build(b, result, {A, B, C});
   }
   mlir::LogicalResult verify();
-  static bool parse(mlir::OpAsmParser *parser, mlir::OperationState *result);
+  static mlir::ParseResult parse(mlir::OpAsmParser *parser,
+                                 mlir::OperationState *result);
   void print(mlir::OpAsmPrinter *p);
 
   //////////////////////////////////////////////////////////////////////////////

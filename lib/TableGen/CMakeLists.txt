@@ -2,6 +2,8 @@ add_llvm_library(LLVMMLIRTableGen
   Argument.cpp
   Attribute.cpp
   Constraint.cpp
+  Dialect.cpp
+  Format.cpp
   Operator.cpp
   OpTrait.cpp
   Pattern.cpp

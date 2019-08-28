@@ -54,10 +54,10 @@ namespace {
 struct MyFunctionPass : public FunctionPass<MyFunctionPass> {
   void runOnFunction() override {
     // Get the current function being operated on.
-    Function *f = getFunction();
+    FuncOp f = getFunction();
 
     // Operate on the operations within the function.
-    f->walk([](Operation *inst) {
+    f.walk([](Operation *inst) {
       ....
     });
   }
@@ -94,10 +94,10 @@ namespace {
 struct MyModulePass : public ModulePass<MyModulePass> {
   void runOnModule() override {
     // Get the current module being operated on.
-    Module *m = getModule();
+    Module m = getModule();
 
     // Operate on the functions within the module.
-    for (auto &func : *m) {
+    for (auto func : m) {
       ....
     }
   }
@@ -114,7 +114,7 @@ static PassRegistration<MyModulePass> pass(
 
 An important concept, along with transformation passes, are analyses. These are
 conceptually similar to transformation passes, except that they compute
-information on a specific Function, or Module, without modifying it. In MLIR,
+information on a specific FuncOp, or Module, without modifying it. In MLIR,
 analyses are not passes but free standing classes that are computed lazily
 on-demand and cached to avoid unnecessary recomputation. An analysis in MLIR
 must adhere to the following:
@@ -143,13 +143,13 @@ above, let's see some examples:
 /// An interesting function analysis.
 struct MyFunctionAnalysis {
   // Compute this analysis with the provided function.
-  MyFunctionAnalysis(Function *function);
+  MyFunctionAnalysis(FuncOp function);
 };
 
 /// An interesting module analysis.
 struct MyModuleAnalysis {
   // Compute this analysis with the provided module.
-  MyModuleAnalysis(Module *module);
+  MyModuleAnalysis(ModuleOp module);
 };
 
 void MyFunctionPass::runOnFunction() {
@@ -181,7 +181,7 @@ void MyModulePass::runOnModule() {
 
   // Query MyFunctionAnalysis for a child function of the current module. It
   // will be computed if it doesn't exist.
-  auto *fn = &*getModule().begin();
+  auto fn = *getModule().begin();
   MyFunctionAnalysis &myAnalysis = getFunctionAnalysis<MyFunctionAnalysis>(fn);
 }
 ```
@@ -255,7 +255,7 @@ pm.addPass(new MyFunctionPass3());
 pm.addPass(new MyModulePass2());
 
 // Run the pass manager on a module.
-Module *m = ...;
+Module m = ...;
 if (failed(pm.run(m)))
     ... // One of the passes signaled a failure.
 ```
@@ -271,7 +271,7 @@ benefits:
     touching a single function at a time, instead of traversing the entire
     program.
 *   This improves multi-threading performance by reducing the number of jobs
-    that need to be scheduled, as well as increasing the efficency of each job.
+    that need to be scheduled, as well as increasing the efficiency of each job.
     An entire function pipeline can be run on each function asynchronously.
 
 As an example, the above pass manager would contain the following pipeline
@@ -301,6 +301,25 @@ static PassRegistration<MyPass> pass("command-line-arg", "description");
 *   "command-line-arg" is the argument to use on the command line to invoke the
     pass from `mlir-opt`.
 *   "description" is a description of the pass.
+
+For passes that cannot be default-constructed, use the third optional argument
+of `PassRegistration` that takes a callback creating the pass:
+
+```c++
+static PassRegistration<MyParametricPass> pass(
+    "command-line-arg", "description",
+    []() -> Pass * {
+      Pass *p = new MyParametricPass(/*options*/);
+      /*... non-trivial-logic to configure the pass ...*/;
+      return p;
+    });
+```
+
+This variant of registration can be used, for example, to accept the
+configuration of a pass from command-line arguments and pass it over to the pass
+constructor. Pass registration mechanism takes ownership of the pass. Make sure
+that the pass is copy-constructible in a way that does not share data since
+[pass manager](#pass-manager) may create copies of the pass to run in parallel.
 
 ### Pass Pipeline Registration
 
@@ -370,8 +389,7 @@ struct DominanceCounterInstrumentation : public PassInstrumentation {
   unsigned &count;
 
   DominanceCounterInstrumentation(unsigned &count) : count(count) {}
-  void runAfterAnalysis(llvm::StringRef, AnalysisID *id,
-                        const llvm::Any &) override {
+  void runAfterAnalysis(llvm::StringRef, AnalysisID *id, Operation *) override {
     if (id == AnalysisID::getID<DominanceInfo>())
       ++count;
   }
@@ -384,7 +402,7 @@ unsigned domInfoCount;
 pm.addInstrumentation(new DominanceCounterInstrumentation(domInfoCount));
 
 // Run the pass manager on a module.
-Module *m = ...;
+Module m = ...;
 if (failed(pm.run(m)))
     ...
 
@@ -394,7 +412,7 @@ llvm::errs() << "DominanceInfo was computed " << domInfoCount << " times!\n";
 ### Standard Instrumentations
 
 MLIR utilizes the pass instrumentation framework to provide a few useful
-developer tools and utilites. Each of these instrumentations are immediately
+developer tools and utilities. Each of these instrumentations are immediately
 available to all users of the MLIR pass framework.
 
 #### Pass Timing
@@ -417,7 +435,7 @@ pipeline. This display mode is available in mlir-opt via
 `-pass-timing-display=list`.
 
 ```shell
-$ mlir-opt foo.mlir -cse -canonicalize -convert-to-llvmir -pass-timing -pass-timing-display=list
+$ mlir-opt foo.mlir -disable-pass-threading -cse -canonicalize -lower-to-llvm -pass-timing -pass-timing-display=list
 
 ===-------------------------------------------------------------------------===
                       ... Pass execution timing report ...
@@ -443,7 +461,7 @@ the most time, and can also be used to identify when analyses are being
 invalidated and recomputed. This is the default display mode.
 
 ```shell
-$ mlir-opt foo.mlir -cse -canonicalize -convert-to-llvmir -pass-timing
+$ mlir-opt foo.mlir -disable-pass-threading -cse -canonicalize -lower-to-llvm -pass-timing
 
 ===-------------------------------------------------------------------------===
                       ... Pass execution timing report ...
@@ -474,7 +492,7 @@ perceived time, or clock time, whereas the `User Time` will display the total
 cpu time.
 
 ```shell
-$ mlir-opt foo.mlir -experimental-mt-pm -cse -canonicalize -convert-to-llvmir -pass-timing
+$ mlir-opt foo.mlir -cse -canonicalize -lower-to-llvm -pass-timing
 
 ===-------------------------------------------------------------------------===
                       ... Pass execution timing report ...
@@ -496,6 +514,9 @@ $ mlir-opt foo.mlir -experimental-mt-pm -cse -canonicalize -convert-to-llvmir -p
 
 #### IR Printing
 
+Note: The IR Printing instrumentation should only be used when multi-threading
+is disabled(`-disable-pass-threading`)
+
 When debugging it is often useful to dump the IR at various stages of a pass
 pipeline. This is where the IR printing instrumentation comes into play. This
 instrumentation allows for conditionally printing the IR before and after pass
@@ -510,7 +531,7 @@ this instrumentation:
     *   Print the IR before every pass in the pipeline.
 
 ```shell
-$ mlir-opt foo.mlir -cse -print-ir-before=cse
+$ mlir-opt foo.mlir -disable-pass-threading -cse -print-ir-before=cse
 
 *** IR Dump Before CSE ***
 func @simple_constant() -> (i32, i32) {
@@ -526,7 +547,7 @@ func @simple_constant() -> (i32, i32) {
     *   Print the IR after every pass in the pipeline.
 
 ```shell
-$ mlir-opt foo.mlir -cse -print-ir-after=cse
+$ mlir-opt foo.mlir -disable-pass-threading -cse -print-ir-after=cse
 
 *** IR Dump After CSE ***
 func @simple_constant() -> (i32, i32) {
@@ -539,7 +560,7 @@ func @simple_constant() -> (i32, i32) {
     *   Always print the Module IR, even for non module passes.
 
 ```shell
-$ mlir-opt foo.mlir -cse -print-ir-after=cse -print-ir-module-scope
+$ mlir-opt foo.mlir -disable-pass-threading -cse -print-ir-after=cse -print-ir-module-scope
 
 *** IR Dump After CSE ***  (function: bar)
 func @bar(%arg0: f32, %arg1: f32) -> f32 {

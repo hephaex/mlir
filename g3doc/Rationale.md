@@ -168,7 +168,7 @@ change.
 
 ### Block Arguments vs PHI nodes
 
-MLIR Functions represent SSA using "[block arguments](LangRef.md#blocks)" rather
+MLIR Regions represent SSA using "[block arguments](LangRef.md#blocks)" rather
 than [PHI instructions](http://llvm.org/docs/LangRef.html#i-phi) used in LLVM.
 This choice is representationally identical (the same constructs can be
 represented in either form) but block arguments have several advantages:
@@ -202,34 +202,6 @@ and described in
 [a talk on YouTube](https://www.youtube.com/watch?v=Ntj8ab-5cvE). The section of
 interest
 [starts here](https://www.google.com/url?q=https://youtu.be/Ntj8ab-5cvE?t%3D596&sa=D&ust=1529450150971000&usg=AFQjCNFQHEWL7m8q3eO-1DiKw9zqC2v24Q).
-
-### Signless types
-
-Integers in the MLIR type system have a bitwidth (note that the `int` type is a
-symbolic width equal to the machine word size), but they do not have an
-intrinsic sign. This means that the operation set has instructions like `add`
-and `mul` which do two's complement arithmetic, but some other operations get a
-sign, e.g. `sdiv` vs `udiv` (exact names TBD).
-
-LLVM uses the [same design](http://llvm.org/docs/LangRef.html#integer-type),
-which was introduced in a revamp rolled out
-[in the LLVM 2.0 integer type](http://releases.llvm.org/2.0/docs/LangRef.html#t_derived).
-Prior to that, from
-[LLVM 1.0](http://releases.llvm.org/1.0/docs/LangRef.html#t_classifications) to
-[1.9](http://releases.llvm.org/1.9/docs/LangRef.html#t_classifications), LLVM
-uses signed types like "sbyte" and "ubyte". This shift was important and has
-served LLVM well over the years. The reason this is important is that it is a
-good thing for an intermediate representation to represent the same computation
-with the same instruction. Signed types got in the way, because (e.g.) an "add
-of an sbyte" does the same computation as an "add of a ubyte", but the type
-system made them look artificially different. This split also required casts
-like "cast from sbyte to ubyte" which do nothing at the machine level. Removing
-signs from the type system eliminated these problems, making the compiler
-simpler.
-
-More information about this split is available in an old
-[talk on youtube](https://www.youtube.com/watch?v=VeRaLPupGks) talking about
-LLVM 2.0.
 
 ### Index type disallowed in vector/tensor/memref types
 
@@ -273,19 +245,50 @@ introduced.
 The bit width is not defined for dialect-specific types at MLIR level. Dialects
 are free to define their own quantities for type sizes.
 
+### Signless types
+
+Integers in the builtin MLIR type system have a bitwidth (note that the `index`
+type has a symbolic width equal to the machine word size), but they do not have
+an intrinsic sign. This means that the "standard ops" operation set has things
+like `addi` and `muli` which do two's complement arithmetic, but some other
+operations get a sign, e.g. `divis` vs `diviu`.
+
+LLVM uses the [same design](http://llvm.org/docs/LangRef.html#integer-type),
+which was introduced in a revamp rolled out
+[in the LLVM 2.0 integer type](http://releases.llvm.org/2.0/docs/LangRef.html#t_derived).
+Prior to that, from
+[LLVM 1.0](http://releases.llvm.org/1.0/docs/LangRef.html#t_classifications) to
+[1.9](http://releases.llvm.org/1.9/docs/LangRef.html#t_classifications), LLVM
+uses signed types like "sbyte" and "ubyte". This shift was important and has
+served LLVM well over the years. The reason this is important is that it is a
+good thing for an intermediate representation to represent the same computation
+with the same instruction. Signed types got in the way, because (e.g.) an "add
+of an sbyte" does the same computation as an "add of a ubyte", but the type
+system made them look artificially different. This split also required casts
+like "cast from sbyte to ubyte" which do nothing at the machine level. Removing
+signs from the type system eliminated these problems, making the compiler
+simpler.
+
+More information about this split is available in an old
+[talk on youtube](https://www.youtube.com/watch?v=VeRaLPupGks) talking about
+LLVM 2.0.
+
+Note that this rationale only applies to the "standard ops" dialect in which we
+can express an opinion about its design. Other dialects generally try to model
+an external system, and should aim to reflect its design as closely as possible.
+
 ### Splitting floating point vs integer operations
 
-The MLIR operation set is likely to
-[follow LLVM](http://llvm.org/docs/LangRef.html#binary-operations) and split
-many integer and floating point operations into different categories, for
-example `addf` vs `addi` and `cmpf` vs `cmpi` (exact names TBD). These
-instructions _are_ polymorphic on the number of elements in the type though, for
-example `addf` is used with scalar floats, vectors of floats, and tensors of
-floats (LLVM does the same thing with its scalar/vector types).
+The MLIR "standard" operation set splits many integer and floating point
+operations into different categories, for example `addf` vs `addi` and `cmpf` vs
+`cmpi`
+([following the design of LLVM](http://llvm.org/docs/LangRef.html#binary-operations)).
+These instructions _are_ polymorphic on the number of elements in the type
+though, for example `addf` is used with scalar floats, vectors of floats, and
+tensors of floats (LLVM does the same thing with its scalar/vector types).
 
-This split is important because floating point and integer operations are
-actually quite different in practice: for example, floating point values include
-NaN's, so
+This split is important because floating point and integer operations are quite
+different in practice: for example, floating point values include NaN's, so
 [integer comparisons](http://llvm.org/docs/LangRef.html#icmp-instruction) and
 [floating point comparisons](http://llvm.org/docs/LangRef.html#fcmp-instruction)
 should use different comparison opcodes. On the arithmetic side of things,
@@ -298,6 +301,10 @@ for performance.
 We are a long way from this sort of thing being a priority to care about in
 MLIR, but since we have experience and know the right way to do this, we'd
 rather design it in from the beginning.
+
+Note that this rationale only applies to the "standard ops" dialect in which we
+can express an opinion about its design. Other dialects generally try to model
+an external system, and should aim to reflect its design as closely as possible.
 
 ### Specifying sign in integer comparison operations
 
@@ -356,13 +363,69 @@ select %cond, %t, %f` is equivalent to
 
 ```mlir
 ^bb0:
-  br_cond %cond, ^bb1(%t), ^bb1(%f)
+  cond_br %cond, ^bb1(%t), ^bb1(%f)
 ^bb1(%r):
 ```
 
 However, this control flow granularity is not available in the ML functions
 where min/max, and thus `select`, are likely to appear. In addition, simpler
 control flow may be beneficial for optimization in general.
+
+### Regions
+
+#### Attributes of type 'Block'
+
+We considered representing regions through `ArrayAttr`s containing a list of a
+special type `IRBlockAttr`, which in turn would contain a list of operations.
+All attributes in MLIR are unique’d within the context, which would make the IR
+inside the regions immortal for no good reason.
+
+#### Use "inlined" functions as regions
+
+We considered attaching a "force-inline" attribute on a function and/or a
+function `call` operation. Even the minimal region support (use cases in
+affine.for and affine.if existing before the regions) requires access to the
+values defined in the dominating block, which is not supported by functions.
+Conceptually, function bodies are instances of regions rather than the inverse;
+regions can also be device kernels, alternative sections, etc.
+
+#### Dedicated `region` operation
+
+This would mean we have a special kind of operation that is allowed to have
+regions while other operations are not. Such distinction is similar to the
+Stmt/Op difference we have had and chose to remove to make the IR simpler and
+more flexible. It would also require analyses and passes to consider the
+interplay between operations (e.g., an `affine.for` operation must be followed
+by a region operation). Finally, a region operation can be introduced using the
+current implementation, among other operations and without being special in any
+sense.
+
+#### Explicit capture of the values used in a region
+
+Being able to use values defined outside the region implies that use-def chains
+may contain uses from different nested regions. Consequently, IR transformations
+and analyses can pull the instruction defining the value across region
+boundaries, for example in case of TableGen-defined canonicalization patterns.
+This would not be the case if all used values had been passed as region
+arguments. One of the motivations for introducing regions in the IR is precisely
+to enable cross-region analyses and transformations that are simpler than
+inter-procedural transformations. Having uses from different regions appear in
+the same use-def chain, contrary to an additional data structure maintaining
+correspondence between function call arguments as uses of the original
+definitions and formal arguments as new definitions, enables such
+simplification. Since individual operations now belong to blocks, which belong
+to regions, it is always possible to check if the definition of the value
+belongs to the same region as its particular use. The risk is that any IR
+traversal will need to handle explicitly this situation and it is easy to forget
+a check (or conversely it isn’t easy to design the right check in a tablegen
+pattern for example): traversing use-def chains potentially crosses implicitly
+semantic barriers, making it possible to unknowingly break region semantics.
+This is expected to be caught in the verifier after the transformation.
+
+At the same time, one may choose to pass certain or all values as region
+arguments to explicitly break the use-def chains in the current proposal. This
+can be combined with an attribute-imposed semantic requirement disallowing the
+body of the region to refer to any value from outside it.
 
 ### Quantized integer operations
 
@@ -558,12 +621,12 @@ func @search_body(%A: memref<?x?xi32>, %S: memref<?xi32>, %key: i32) {
 
 ^bb1(%j: i32)
   %p1 = cmpi "lt", %j, %nj : i32
-  br_cond %p1, ^bb2, ^bb5
+  cond_br %p1, ^bb2, ^bb5
 
 ^bb2:
   %v = load %A[%i, %j] : memref<?x?xi32>
   %p2 = cmpi "eq", %v, %key : i32
-  br_cond %p2, ^bb3(%j), ^bb4
+  cond_br %p2, ^bb3(%j), ^bb4
 
 ^bb3(%j: i32)
   store %j, %S[%i] : memref<?xi32>
@@ -853,6 +916,50 @@ bb0 (%0, %1: memref<128xf32>, i64):
 }
 ```
 
+### Regions
+
+#### Making function definition an operation
+
+MLIR supports values of a Function type. Instead of having first-class IR
+concept for functions, one could define an operation with a body region that
+defines a function value. The particularity of functions is that their names are
+globally visible and can be referred to before being defined, unlike SSA values
+that must be defined first. Implementing a "function definition" operation would
+require to relax some of the SSA constraints in a region, and also make the IR
+Module a region as well. It would also affect the core infrastructure (e.g.,
+function passes) only for the sake of concept unification.
+
+#### Having types on a region
+
+Instead of inspecting the types of arguments of the first block, one could give
+the region itself a type. This type would be redundant with block argument
+types, which must have values and create room for type mismatches. While
+functions do have types that are partly redundant with the arguments of the
+first block in the function, this is necessary to support function declarations
+that do not have a body which we can refer to in order to obtain the argument
+types. A region is always contained in an operation or a function that can be
+queried to obtain the “type” of the region if necessary.
+
+A type on a region can be justified if Regions were to be considered separately
+from the enclosing entity (operation or function) and had their own semantics
+that should be checked.
+
+#### Attaching attributes to regions
+
+Regions could be annotated with dialect attributes to use attribute verification
+hooks. An operation could take multiple regions as arguments, and each of them
+may require different attributes. However, there are currently very few
+practical cases where this would be necessary. Instead, one could simulate
+per-region attributes with array attributes attached to the entity containing
+the region (operation or function). This decreases the overall complexity of the
+IR and enables more concise and op-specific forms, e.g., when all regions of an
+op have the same attribute that can be only mentioned once. Since the semantics
+of the region is entirely defined by the enclosing entity, it also makes sense
+to have attributes attached to that entity rather than to the region itself.
+
+This can be reconsidered in the future if we see a non-neglectable amount of use
+cases.
+
 ### Read/Write/May_Read/May_Write sets for External Functions
 
 Having read, write, may_read, and may_write sets for external functions which
@@ -925,7 +1032,7 @@ arguments and a yield like terminator in for/if instructions.
 
 The abandoned design of supporting escaping scalars is as follows:
 
-#### For Instruction
+#### affine.for Instruction
 
 Syntax:
 
@@ -955,7 +1062,7 @@ func int32 @sum(%A : memref<?xi32>, %N : i32) -> (i32) {
 }
 ```
 
-#### If/else Instruction
+#### affine.if/else Instruction
 
 Syntax:
 
@@ -1007,11 +1114,15 @@ any function share a use list. This means that optimizing multiple functions in
 parallel won't work (at least without some sort of synchronization on the use
 lists, which would be unbearably inefficient).
 
-While this is over the planning horizon for MLIR, we definitely want to support
-multithreaded compilation. We do this through a couple of features: first MLIR
-makes use of extensive uniqued immutable data structures (affine expressions,
-types, etc are all immutable, uniqued, and immortal). Second, constants are
-uniqued to per-function pools, instead of being globally uniqued. Third,
+MLIR now supports a multithreaded pass manager. We do this through several
+design choices:
+
+1) MLIR makes use of extensive uniqued immutable data structures (affine
+expressions, types, etc are all immutable, uniqued, and immortal). 2) constants
+are defined in per-function pools, instead of being globally uniqued. 3)
 functions themselves are not SSA values either, so they don't have the same
-problem as constants. We believe that this will set MLIR up well for the day
-that we want to do efficient multithreaded compilation and code generation.
+problem as constants. 4) FunctionPasses are copied (through their copy ctor)
+into one instances per thread, avoiding sharing of local state across threads.
+
+This allows MLIR function passes to support efficient multithreaded compilation
+and code generation.

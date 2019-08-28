@@ -144,7 +144,7 @@ In these operations, `<struct>` must be a value of wrapped LLVM IR structure
 type and `<value>` must be a value that corresponds to one of the (nested)
 structure element types.
 
-Note the use of integer literals to designate subscripts, which is made possbile
+Note the use of integer literals to designate subscripts, which is made possible
 by `extractvalue` and `insertvalue` must have constant subscripts. Internally,
 they are modeled as array attributes.
 
@@ -255,6 +255,27 @@ Selection: `select <condition>, <lhs>, <rhs>`.
 These operations do not have LLVM IR counterparts but are necessary to map LLVM
 IR into MLIR.
 
+#### `llvm.addressof`
+
+Creates an SSA value containing a pointer to a global variable or constant
+defined by `llvm.global`.  The global value can be defined after its first
+referenced.  If the global value is a constant, storing into it is not allowed.
+
+Examples:
+
+```mlir {.mlir}
+func @foo() {
+  // Get the address of a global.
+  %0 = llvm.addressof @const : !llvm<"i32*">
+
+  // Use it as a regular pointer.
+  %1 = llvm.load %0 : !llvm<"i32*">
+}
+
+// Define the global.
+llvm.global @const(42 : i32) : !llvm.i32
+```
+
 #### `llvm.constant`
 
 Unlike LLVM IR, MLIR does not have first-class constant values. Therefore, all
@@ -281,6 +302,34 @@ Examples:
 
 // Splat vector constant,.
 %3 = llvm.constant(splat<vector<4xf32>, 1.0>) : !llvm<"<4 x float>">
+```
+
+#### `llvm.global`
+
+Since MLIR allows for arbitrary operations to be present at the top level,
+global variables are defined using the `llvm.global` operation. Both global
+constants and variables can be defined, and the value must be initialized in
+both cases. The initialization and type syntax is similar to `llvm.constant` and
+may use two types: one for MLIR attribute and another for the LLVM value. These
+types must be compatible. `llvm.global` must appear at top-level of the
+enclosing module. It uses an @-identifier for its value, which will be uniqued
+by the module with respect to other @-identifiers in it.
+
+Examples:
+
+```mlir {.mlir}
+// Global values use @-identifiers.
+llvm.global constant @cst(42 : i32) : !llvm.i32
+
+// Non-constant values must also be initialized.
+llvm.global @variable(32.0 : f32) : !llvm.float
+
+// Strings are expected to be of wrapped LLVM i8 array type and do not
+// automatically include the trailing zero.
+llvm.global @string("abc") : !llvm<"[3 x i8]">
+
+// For strings globals, the trailing type may be omitted.
+llvm.global constant @no_trailing_type("foo bar")
 ```
 
 #### `llvm.undef`

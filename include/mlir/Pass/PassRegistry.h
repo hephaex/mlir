@@ -24,10 +24,12 @@
 #define MLIR_PASS_PASSREGISTRY_H_
 
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include <functional>
+#include <memory>
 
 namespace mlir {
 class Pass;
@@ -36,16 +38,11 @@ class PassManager;
 /// A registry function that adds passes to the given pass manager.
 using PassRegistryFunction = std::function<void(PassManager &)>;
 
-using PassAllocatorFunction = std::function<Pass *()>;
+using PassAllocatorFunction = std::function<std::unique_ptr<Pass>()>;
 
 /// A special type used by transformation passes to provide an address that can
 /// act as a unique identifier during pass registration.
-struct alignas(8) PassID {
-  template <typename PassT> static PassID *getID() {
-    static PassID id;
-    return &id;
-  }
-};
+using PassID = ClassID;
 
 /// Structure to group information about a passes and pass pipelines (argument
 /// to invoke via mlir-opt, description, pass pipeline builder).
@@ -96,10 +93,6 @@ public:
   /// PassRegistration or registerPass.
   PassInfo(StringRef arg, StringRef description, const PassID *passID,
            PassAllocatorFunction allocator);
-
-private:
-  // Unique identifier for pass.
-  const PassID *passID;
 };
 
 /// Register a specific dialect pipeline registry function with the system,
@@ -113,16 +106,25 @@ void registerPass(StringRef arg, StringRef description, const PassID *passID,
                   const PassAllocatorFunction &function);
 
 /// PassRegistration provides a global initializer that registers a Pass
-/// allocation routine for a concrete pass instance.
+/// allocation routine for a concrete pass instance.  The third argument is
+/// optional and provides a callback to construct a pass that does not have
+/// a default constructor.
 ///
 /// Usage:
 ///
 ///   // At namespace scope.
 ///   static PassRegistration<MyPass> Unused("unused", "Unused pass");
 template <typename ConcretePass> struct PassRegistration {
+  PassRegistration(StringRef arg, StringRef description,
+                   const PassAllocatorFunction &constructor) {
+    registerPass(arg, description, PassID::getID<ConcretePass>(), constructor);
+  }
+
   PassRegistration(StringRef arg, StringRef description) {
-    registerPass(arg, description, PassID::getID<ConcretePass>(),
-                 [] { return new ConcretePass(); });
+    PassAllocatorFunction constructor = [] {
+      return std::make_unique<ConcretePass>();
+    };
+    registerPass(arg, description, PassID::getID<ConcretePass>(), constructor);
   }
 };
 

@@ -29,11 +29,11 @@ namespace mlir {
 
 class FunctionPassBase;
 
-/// Creates a pass to check memref accesses in an ML Function.
+/// Creates a pass to check memref accesses in a Function.
 FunctionPassBase *createMemRefBoundCheckPass();
 
-/// Creates a pass to check memref access dependences in an ML Function.
-FunctionPassBase *createMemRefDependenceCheckPass();
+/// Creates a pass to check memref access dependences in a Function.
+FunctionPassBase *createTestMemRefDependenceCheckPass();
 
 /// Creates a pass to test parallelism detection; emits note for parallel loops.
 FunctionPassBase *createParallelismDetectionTestPass();
